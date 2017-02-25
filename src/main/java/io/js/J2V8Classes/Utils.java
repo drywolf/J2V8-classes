@@ -376,6 +376,37 @@ public class Utils {
         return res;
     }
 
+    public static String UnboxReturnType(String returnType)
+    {
+        switch (returnType)
+        {
+            case "byte": return "Byte";
+            case "short": return "Short";
+            case "int": return "Integer";
+            case "long": return "Long";
+            case "float": return "Float";
+            case "double": return "Double";
+            case "boolean": return "Boolean";
+            case "char": return "Character";
+            default: return returnType;
+        }
+    }
+
+    public static String UnboxReturnValue(String returnType)
+    {
+        switch (returnType)
+        {
+            case "byte": return ".byteValue()";
+            case "short": return ".shortValue()";
+            case "int": return ".intValue()";
+            case "long": return ".longValue()";
+            case "float": return ".floatValue()";
+            case "double": return ".doubleValue()";
+            case "boolean": return ".booleanValue()";
+            case "char": return ".charValue()";
+            default: return "";
+        }
+    }
 
     private static HashMap<Integer, Object> javaInstanceMap = new HashMap<Integer, Object>();
     private static HashMap<Integer, V8Object> jsInstanceMap = new HashMap<Integer, V8Object>();
@@ -402,6 +433,15 @@ public class Utils {
 
         registerInstance(o);
         jsInstanceMap.put(hash, res);
+
+        // NOTE: important to do this here to avoid looking up for "java.lang.Class" endlessly
+        if (!clz.equals(Class.class))
+        {
+            logger.info("ADDED _class for: " + clzName);
+            res.add("__class", getV8ObjectForObject(runtime, clz));
+        }
+        else
+            logger.info("IGNORED _class for: " + clzName);
 
         return res.twin();
     }

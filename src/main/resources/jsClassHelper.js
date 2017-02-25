@@ -50,6 +50,13 @@ Class = abitbol.Class;
       }
       // make the instance
       var clz = getClass(res.__javaClass);
+
+      if (!clz)
+      {
+        log('WARNING: Class-Info not found for class: ', res.__javaClass);
+        return null;
+      }
+
       var inst = new clz(_FROM_JAVA, res);
       return inst;
     }
@@ -100,15 +107,22 @@ Class = abitbol.Class;
     opts = opts || {};
 
     if (!javaData) {
+      log('no proxy-data, no changes to instance');
       return instance;
     }
 
     // Add all the js -> java methods
     var methods = javaData.methods;
     if (methods && opts.methods !== false) {
+      log('adding js->java methods count: ' + Object.keys(methods).length);
+      log('adding js->java methods: ' + Object.keys(methods));
+
       for (var k in methods) {
         addMethod(instance, k, methods[k]);
       }
+    }
+    else {
+      log('no js->java methods or disabled: ' + (opts.methods === false));
     }
 
     // Add getters and setters for the fields
@@ -116,7 +130,12 @@ Class = abitbol.Class;
     var _GET_PREFIX = '__get_';
     var _SET_PREFIX = '__set_';
     if (fields && opts.fields !== false) {
+      log('adding js->java fields count: ' + Object.keys(fields).length);
+      log('adding js->java fields: ' + Object.keys(fields));
       for (var k in fields) {
+
+        log('adding field: ' + k);
+
         if (k.indexOf(_GET_PREFIX) !== 0) {
           continue;
         }
@@ -129,6 +148,9 @@ Class = abitbol.Class;
           fields[_SET_PREFIX + strippedK]
         );
       }
+    }
+    else {
+      log('no js->java fields or disabled: ' + (opts.fields === false));
     }
 
     return instance;
@@ -261,6 +283,8 @@ Class = abitbol.Class;
 
 
   var getClass = function(className) {
+    //log("BEGIN getClass " + className);
+
     if (!className) {
       throw new Error('Must provide className to getClass');
     }
@@ -289,7 +313,7 @@ Class = abitbol.Class;
       if (isDynamicClass(className)) {
         // Wait to call createInstance until we have js args for js -> java super
         log('WARNING: internalClassInit called with dynamic class ', className);
-//        return;
+        //return;
       }
 
       var instData;
@@ -321,6 +345,12 @@ Class = abitbol.Class;
         log('WARNING: No instData.__javaInstance');
       } else {
         this.__javaInstance = instData.__javaInstance;
+
+        //if (isDynamicClass(className)) {
+          log('adding __class property for class: ' + className);
+          this.__class = instData.__class;
+        //}
+
         log('(inst: ' + instChildClass + ' : ' + this.__javaInstance + ')');
       }
 
@@ -343,6 +373,7 @@ Class = abitbol.Class;
     };
 
     if (!isDynamicClass(className)) {
+      log("Applying default ctor for " + className);
       classConstructor.__init__ = function() {
         internalClassInit.apply(this, arguments);
       };
@@ -425,6 +456,14 @@ Class = abitbol.Class;
       log('No user defined init, using internalClassInit');
       classConstructor.__init__ = internalClassInit;
     }
+    /*else {
+      log('User defined init found, calling super');
+      var userInit = classConstructor.__init__;
+      classConstructor.__init__ = function() {
+        internalClassInit.apply(this, arguments);
+        userInit.apply(this, arguments);
+      };
+    }*/
 
     log('Generating abitbol class: ', classConstructor.__name__, ' classConstructor: ', Object.keys(classConstructor));
     // log('> TEST ', classConstructor.getSubtype);
@@ -534,6 +573,36 @@ Class = abitbol.Class;
     };
   };
 
+  var createJsInstance = function(res) {
+    try {
+      var javaData = res && res.v;
+
+      log('Creating JS instance...');
+
+      if (javaData) {
+        log('for: ', javaData.__javaInstance, ' class: ', javaData.__javaClass);
+        log('data: ', Object.keys(javaData));
+      }
+      else {
+        log('ERROR: no instance/class information available');
+        return;
+      }
+
+      log("before fixValueObject");
+      var inst = fixValueObject(res);
+      log("after fixValueObject");
+
+      if (inst) {
+        instanceMap[javaData.__javaInstance] = inst;
+        log("added instance to map: " + javaData.__javaInstance);
+      }
+      else
+        log("Was unable to create JS instance for Java object");
+    }
+    catch (e) {
+      log("Error in JS-Ctor: " + e);
+    }
+  };
 
   var executeInstanceMethod = function(javaInstance, methodName, args) {
     log('Calling js instance method: ', javaInstance, ' ', methodName);
@@ -550,7 +619,7 @@ Class = abitbol.Class;
       return;
     }
 
-	args = args.v;
+    args = args.v;
     log('executeInstanceMethod: Fixing args');
     for (var key in args) {
       args[key] = fixValueObject(args[key]);
@@ -563,6 +632,7 @@ Class = abitbol.Class;
 
 
   return {
+    createJsInstance: createJsInstance,
     getClass: getClass,
     addJavaFieldsToObj: addJavaFieldsToObj,
     getBlankClassInfo: getBlankClassInfo,
@@ -571,5 +641,5 @@ Class = abitbol.Class;
 
 }));
 
-
+createJsInstance = ClassHelpers.createJsInstance;
 executeInstanceMethod = ClassHelpers.executeInstanceMethod;

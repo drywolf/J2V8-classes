@@ -1,11 +1,25 @@
 package io.js.J2V8Classes;
 
+import java.io.File;
+import java.lang.ClassLoader;
+import java.net.URLClassLoader;
+import java.net.URL;
+
 import com.eclipsesource.v8.*;
 
 import java.lang.reflect.*;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.logging.Logger;
+
+import javassist.ClassClassPath;
+import javassist.ClassPool;
+import javassist.CtClass;
+import javassist.NotFoundException;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Created by Brown on 4/26/16.
@@ -19,6 +33,31 @@ public class V8JavaClasses {
     public static V8 getRuntime(String name) {
         return runtimes.get(name);
     }
+
+    public static void initMainClassPaths()
+    {
+        String classpath = System.getProperty("java.class.path");
+        logger.info("Initializing from main class-path: " + classpath);
+
+        String[] classpathEntries = classpath.split(File.pathSeparator);
+
+        ClassPool cp = ClassPool.getDefault();
+
+        for (String cpEntry : classpathEntries)
+        {
+            //Class c = Class.forName(superName);
+            try {
+                logger.info("Adding main class-path: " + cpEntry);
+                cp.insertClassPath(cpEntry);
+                logger.info("Added main class-path: " + cpEntry);
+            }
+            catch (NotFoundException e) {
+                logger.info("Main class-path error: " + e);
+            }
+        }
+    }
+
+    public static HashMap<String, String> ClassAliases = new HashMap<String, String>();
 
     public static V8 injectClassHelper(V8 runtime, String runtimeName) {
         if (runtimes.containsKey(runtimeName)) {
@@ -87,9 +126,9 @@ public class V8JavaClasses {
                 String className = parameters.getString(0);
                 logger.info("Getting class: " + className);
                 try {
-                    getClassInfo(className, parameters.getObject(1));
+                    getClassInfo(runtime, className, parameters.getObject(1));
                 } catch (ClassNotFoundException e) {
-                    logger.warning("> Class not found");
+                    logger.warning("> getClass > Class not found");
                 } catch (IllegalAccessException e) {
                     e.printStackTrace();
                 }
@@ -100,11 +139,13 @@ public class V8JavaClasses {
 
         JavaCallback createInstance = new JavaCallback() {
             public V8Object invoke(final V8Object receiver, final V8Array parameters) {
+                logger.info("BEGIN JavaCreateInstance");
                 String className = parameters.getString(0);
+                logger.info("BEFORE JavaCreateInstance");
                 try {
                     return createInstance(runtime, className, Utils.v8arrayToObjectArray(parameters, 1));
                 } catch (ClassNotFoundException e) {
-                    logger.warning("> Class not found");
+                    logger.warning("> createInstance > Class not found");
                 } catch (IllegalAccessException e) {
                     e.printStackTrace();
                 } catch (InstantiationException e) {
@@ -112,6 +153,8 @@ public class V8JavaClasses {
                 } catch (InvocationTargetException e) {
                     e.printStackTrace();
                 } catch (NoSuchMethodException e) {
+                    e.printStackTrace();
+                } catch (IllegalArgumentException e) {
                     e.printStackTrace();
                 }
                 return null;
@@ -126,6 +169,45 @@ public class V8JavaClasses {
                 V8Array methods = parameters.getArray(2);
                 logger.info("Generating class: " + className + " extending " + superName + " (method count " + methods.length() + ")");
 
+                ClassPool cp = null;
+                // CtClass superClz = null;
+                
+                try {
+                    cp = ClassPool.getDefault();
+
+                    Class c = Class.forName(superName);
+                    cp.insertClassPath(new ClassClassPath(c));
+                    logger.info("Inserted CP for " + superName);
+
+                    // NOTE: disabled until clear if needed
+                    //superClz = cp.getCtClass(superName);
+
+                    //if (superClz == null)
+                    //    throw new RuntimeException("Not sure if unexpected ... superClz == null");
+                    /*
+                    Javassist API docs
+                    Returns a CtClass object with the given name. This is almost equivalent to get(String) except that classname can be an array-type "descriptor"
+                    (an encoded type name) such as [Ljava/lang/Object;. Using this method is not recommended; this method should be used only to obtain the
+                    CtClass object with a name returned from getClassInfo in javassist.bytecode.ClassPool. getClassInfo returns a fully-qualified class name but,
+                    if the class is an array type, it returns a descriptor.
+                    */
+                    //superClz = cp.get(superName);
+                }
+                catch (Exception e) {
+                    logger.info("generateClass Ex " + e);
+                }
+
+                // NOTE: disabled until clear if needed
+                // CtClass clz = cp.makeClass(className, superClz);
+                // boolean isiface = superClz.isInterface();
+
+                // // add interface if needed
+                // if (superClz.isInterface()) {
+                    
+                //     clz = cp.makeClass(className);
+                //     clz.addInterface(superClz);
+                // }
+
                 ClassGenerator.createClass(runtimeName, className, superName, methods);
 
                 methods.release();
@@ -136,13 +218,55 @@ public class V8JavaClasses {
         return runtime;
     }
 
-
-    private static void getClassInfo(String className, V8Object classInfo) throws ClassNotFoundException, IllegalAccessException {
+    private static void getClassInfo(V8 runtime, String className, V8Object classInfo) throws ClassNotFoundException, IllegalAccessException {
         logger.info("Getting class info: " + className);
-        Class clz = Class.forName(className);
+
+        String alias = ClassAliases.get(className);
+
+        if (alias != null)
+        {
+            logger.info("Using class alias: " + alias);
+            className = alias;
+        }
+
+        Class initclz = null;
+
+        try {
+        logger.info("Getting Java class: " + className);
+
+        // try {
+            initclz = Class.forName(className);
+        // }
+        // catch (ClassNotFoundException e)
+        // {
+        // }
+
+        if (initclz == null)
+        {
+            logger.info("Class not found in default class-loader");
+
+            // TODO: find the ClassLoader that contains the class
+            // for (ClassLoader cl : cls)
+            // {
+            //     logger.info("Looking into class-loader: " + cl.toString());
+
+            //     initclz = Class.forName(className, true, cl);
+
+            //     if (initclz != null)
+            //     {
+            //         logger.info("Class found at alternative class-loader");
+            //         break;
+            //     }
+            // }
+        }
+
+        Class clz = initclz;
+
+        logger.info("After getting Java class: " + className);
 
         generateAllGetSet(classInfo.getObject("statics"), clz, clz, true);
         generateAllGetSet(classInfo.getObject("publics"), clz, clz, false);
+        
         String clzName = Utils.getClassName(clz);
         classInfo.add("__javaClass", clzName);
 
@@ -150,15 +274,66 @@ public class V8JavaClasses {
         if (superClz != Object.class && superClz != null) {
             classInfo.add("__javaSuperclass", Utils.getClassName(clz.getSuperclass()));
         }
-    }
 
+        if (className.equals("java.lang.Class"))
+        {
+            logger.info("Skipping __class for java.lang.Class");
+            return;
+        }
+
+        V8Object statics = classInfo.getObject("statics");
+        V8Object jsF = statics.getObject("fields");
+
+        JavaCallback getter = new JavaCallback() {
+            public V8Object invoke(final V8Object receiver, final V8Array parameters) {
+                try {
+                    logger.info("get __class");
+                    return Utils.toV8Object(runtime, clz);
+                } catch (V8ResultUndefined e) {
+                    e.printStackTrace();
+                    logger.info("ERROR getting __class " + e);
+                }
+                return new V8Object(runtime);
+            }
+        };
+        jsF.registerJavaMethod(getter, "__get_" + "__class");
+
+        JavaVoidCallback setter = new JavaVoidCallback() {
+            public void invoke(final V8Object receiver, final V8Array parameters) {
+                logger.info("ERROR not allowed to set __class");
+            }
+        };
+        jsF.registerJavaMethod(setter, "__set_" + "__class");
+        }
+        catch (ClassNotFoundException e) {
+            logger.info("Empty classInfo for: " + className + " because class was not found");
+        }
+        catch (RuntimeException e) {
+            logger.info("Invalid JS proxy class because RT: " + e.toString());
+            e.printStackTrace();
+            throw e;
+        }
+        catch (Exception e) {
+            logger.info("Invalid JS proxy class because: " + e.toString());
+            e.printStackTrace();
+            throw e;
+        }
+        // V8 runtime = classInfo.getRuntime();
+        // V8Object jscls = Utils.getV8ObjectForObject(runtime, clz);
+        // classInfo.add("__class", jscls);
+    }
 
     private static V8Object createInstance(V8 runtime, String className, Object[] parameters) throws ClassNotFoundException, IllegalAccessException, InstantiationException, InvocationTargetException, NoSuchMethodException {
         logger.info("Getting class instance: " + className);
         Class clz = Class.forName(className);
 
         // TODO: support for nested classes? http://stackoverflow.com/a/17485341
-        logger.info("> Getting constructor");
+        List<String> paramTypes = new ArrayList<String>();
+        for (Object o : parameters) {
+            paramTypes.add(o.getClass().toString());
+        }
+
+        logger.info("> Getting constructor for args: " + String.join(", ", paramTypes));
         Executable inferredMethod = Utils.findMatchingExecutable(
                 clz.getConstructors(),
                 parameters,
