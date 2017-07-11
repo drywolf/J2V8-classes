@@ -24,6 +24,15 @@ public class Utils {
 
     private static Logger logger = Logger.getLogger("Utils");
 
+    public static <T> String printArray(T[] array)
+    {
+        return String.join(",",
+            Arrays.stream(array)
+            .map(arg ->  arg == null ? "null" : arg.toString())
+            .toArray(String[]::new)
+        );
+    }
+
     public static String getScriptSource(ClassLoader classLoader, String path) {
         InputStream in = classLoader.getResourceAsStream(path);
         try {
@@ -60,7 +69,7 @@ public class Utils {
     }
     public static Object[] v8arrayToObjectArray(V8Array v8array, int start, int end) {
         Object[] res = new Object[end - start];
-        logger.info("v8arrayToObjectArray: " + (end - start));
+        logger.fine("v8arrayToObjectArray: " + (end - start));
 
         Class lowestCommonClass = null;
         boolean hasUnanimousClass = true;
@@ -73,7 +82,7 @@ public class Utils {
             // Replace V8Value instances with their java counterparts
             if (o instanceof V8Array) {
                 V8Array v8o = (V8Array) o;
-                logger.info("Found array, recursing...");
+                logger.fine("Found array, recursing...");
                 res[idx] = v8arrayToObjectArray(v8o);
 //                v8o.release();
             } else if (o instanceof V8Object) {
@@ -92,7 +101,7 @@ public class Utils {
 
             if (res[idx] != null) {
                 Class resClz = res[idx].getClass();
-                logger.info("resClz: " + i + ": " + resClz.getName());
+                logger.fine("resClz: " + i + ": " + resClz.getName());
                 if (hasUnanimousClass) {
                     if (lowestCommonClass == null) {
                         lowestCommonClass = resClz;
@@ -104,15 +113,19 @@ public class Utils {
         }
 
         if (lowestCommonClass != null && hasUnanimousClass) {
-            logger.info("lowestCommonClass: " + lowestCommonClass.getName());
+            logger.fine("lowestCommonClass: " + lowestCommonClass.getName());
             try {
                 // TODO: this seems like cancer
                 String lccName = lowestCommonClass.getName();
+
+                lccName = V8JavaClasses.classAliasFor(lccName);
+
                 if (!lowestCommonClass.isArray()) {
                     lccName = "[L" + lccName + ";";
                 } else {
                     lccName = "[" + lccName;
                 }
+
                 Class<? extends Object[]> newClz = (Class<? extends Object[]>) Class.forName(lccName);
                 return Arrays.copyOf(res, res.length, newClz);
             } catch (ClassNotFoundException e) {
@@ -159,6 +172,11 @@ public class Utils {
         Class[] excParamTypes = exc.getParameterTypes();
 
         for (int i = 0; i < params.length; i++) {
+
+            // TODO: proper handling & testing of null params
+            if (params[i] == null)
+                continue;
+
             Class need = excParamTypes[i];
             Class got = params[i].getClass();
 
@@ -248,15 +266,17 @@ public class Utils {
 
     public static Executable findMatchingExecutable(Executable[] excs, Object[] params, String name) {
         // TODO: support varargs without passing as array
-        logger.info("Finding method...  \"" + name + "\" (total " + excs.length + ")");
+        logger.fine("Finding method...  \"" + name + "\" (total " + excs.length + ")");
 
         Class[] paramTypes = Utils.getArrayClasses(params);
-        logger.info("Arg classes: " + Arrays.toString(paramTypes));
+        logger.fine("Arg classes: " + printArray(paramTypes));
         Type[] paramTypes2 = new Type[paramTypes.length];
         for (int i = 0; i < paramTypes.length; i++) {
-            paramTypes2[i] = params[i].getClass();
+            // TODO: proper handling & testing of null params
+            if (params[i] != null)
+                paramTypes2[i] = params[i].getClass();
         }
-        logger.info("Arg types: " + Arrays.toString(paramTypes2));
+        logger.fine("Arg types: " + printArray(paramTypes2));
 
         for (int i = 0; i < excs.length; i++) {
             if (name != null && excs[i].getName() != name) {
@@ -264,9 +284,9 @@ public class Utils {
             }
 
             Class[] excParamTypes = excs[i].getParameterTypes();
-            logger.info("> Testing against " + excs[i].getName() + "(args: " + Arrays.toString(excParamTypes) + ")");
+            logger.fine("> Testing against " + excs[i].getName() + "(args: " + printArray(excParamTypes) + ")");
             Type[] excParamTypes2 = excs[i].getGenericParameterTypes();
-            logger.info(">> : " + Arrays.toString(excParamTypes2));
+            logger.fine(">> : " + printArray(excParamTypes2));
             if (excParamTypes.length != paramTypes.length) {
                 continue;
             }
@@ -277,7 +297,8 @@ public class Utils {
                 Class need = excParamTypes[j];
                 Class got = paramTypes[j];
 
-                if (need.isAssignableFrom(got) || need.equals(got)) {
+                // TODO: proper handling & testing of null params
+                if (need == null || got == null || need.isAssignableFrom(got) || need.equals(got)) {
                     continue;
                 }
 
@@ -309,7 +330,7 @@ public class Utils {
                 match = false;
             }
             if (match) {
-                logger.info("> Found: " + excs[i]);
+                logger.fine("> Found: " + excs[i]);
                 return excs[i];
             }
         }
@@ -320,20 +341,20 @@ public class Utils {
 
 
     public static void releaseAllFor(V8 runtime) {
-        logger.info("releaseAllFor: " + runtime);
+        logger.fine("releaseAllFor: " + runtime);
         Iterator<Map.Entry<Integer, V8Object>> it = jsInstanceMap.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Integer, V8Object> pair = (Map.Entry)it.next();
             V8Object jso = pair.getValue();
             if (jso.getRuntime() == runtime) {
                 int hash = pair.getKey();
-                logger.info("> releasing: " + hash);
+                logger.fine("> releasing: " + hash);
                 jso.release();
                 javaInstanceMap.remove(hash);
                 it.remove();
             }
         }
-        logger.info("> items still left: " + jsInstanceMap.size());
+        logger.fine("> items still left: " + jsInstanceMap.size());
     }
 
 
@@ -356,7 +377,7 @@ public class Utils {
         } else if (clz == CharSequence.class) {
             res.add("v", o.toString());
         } else if (clz.isArray()) {
-            logger.info("> Array! " + clz);
+            logger.fine("> Array! " + clz);
             Object[] oarr = toObjectArray(o);
             V8Array arr = new V8Array(v8);
             for (int i = 0; i < oarr.length; i++) {
@@ -367,7 +388,7 @@ public class Utils {
         } else if (o instanceof V8Value) {
             res.add("v", (V8Value) o);
         } else if (o instanceof Object) {
-            logger.info("> Class! " + clz);
+            logger.fine("> Class! " + clz);
             V8Object jsInst = Utils.getV8ObjectForObject(v8, o);
             res.add("v", jsInst);
         } else {
@@ -415,7 +436,7 @@ public class Utils {
         int hash = System.identityHashCode(o);
         Class clz = o.getClass();
         String clzName = getClassName(clz);
-        logger.info("Finding V8Object for: " + clzName + " : "+ hash + "");
+        logger.fine("Finding V8Object for: " + clzName + " : "+ hash + "");
 
         if (jsInstanceMap.containsKey(hash)) {
             V8Object jsInst = (V8Object) jsInstanceMap.get(hash);
@@ -425,7 +446,7 @@ public class Utils {
             logger.warning("Trying to return a released instance!");
         }
 
-        logger.info("> None found, registering new: " + clzName);
+        logger.fine("> None found, registering new: " + clzName);
 
         V8Object res = new V8Object(runtime);
         res.add("__javaInstance", hash);
@@ -437,11 +458,11 @@ public class Utils {
         // NOTE: important to do this here to avoid looking up for "java.lang.Class" endlessly
         if (!clz.equals(Class.class))
         {
-            logger.info("ADDED _class for: " + clzName);
+            logger.fine("ADDED _class for: " + clzName);
             res.add("__class", getV8ObjectForObject(runtime, clz));
         }
         else
-            logger.info("IGNORED _class for: " + clzName);
+            logger.fine("IGNORED _class for: " + clzName);
 
         return res.twin();
     }
@@ -477,7 +498,9 @@ public class Utils {
     public static Class[] getArrayClasses(Object[] arr) {
         Class[] classes = new Class[arr.length];
         for (int i = 0; i < arr.length; i++) {
-            classes[i] = arr[i].getClass();
+            // TODO: proper handling & testing of null params
+            if (arr[i] != null)
+                classes[i] = arr[i].getClass();
         }
         return classes;
     }

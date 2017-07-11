@@ -8,6 +8,7 @@ import javassist.*;
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
 import java.util.logging.Logger;
+import java.util.Arrays;
 
 /**
  * Created by Brown on 4/27/16.
@@ -16,7 +17,7 @@ public class ClassGenerator {
     private static Logger logger = Logger.getLogger("ClassGenerator");
 
     public static Class createClass(String runtimeName, String canonicalName, String superClzName, V8Array methods) {
-        logger.info("Generating class: " + canonicalName + " extends " + superClzName);
+        logger.fine("Generating class: " + canonicalName + " extends " + superClzName);
         ClassPool cp = ClassPool.getDefault();
 
         CtClass clz = null;
@@ -28,7 +29,7 @@ public class ClassGenerator {
             if (superClz.isInterface()) {
                 clz = cp.makeClass(canonicalName);
                 clz.addInterface(superClz);
-                logger.info("Implementing interface: " + superClzName);
+                logger.fine("Implementing interface: " + superClzName);
             }
 
             CtField runtimeNameField = new CtField(cp.get("java.lang.String"), "runtimeName", clz);
@@ -42,7 +43,7 @@ public class ClassGenerator {
             CtMethod runJsFunc = CtNewMethod.make(
                     "private Object runJsFunc(String name, Object[] args) { " +
                         "java.util.logging.Logger logger = java.util.logging.Logger.getLogger(\"runJsFunc\");" +
-                        "logger.info(\"runJsFunc: \" + name + \" BEGIN\");" +
+                        "logger.fine(\"runJsFunc: \" + name + \" BEGIN\");" +
                         "try {" +
                         "com.eclipsesource.v8.V8 v8 = io.js.J2V8Classes.V8JavaClasses.getRuntime(runtimeName);" +
                         "com.eclipsesource.v8.V8Locker lockr = v8.getLocker();"+
@@ -59,16 +60,16 @@ public class ClassGenerator {
                         "}" +
                         "v8Args.release();" +
                         "lockr.release();"+
-                        "logger.info(\"runJsFunc: \" + name + \" END\");" +
+                        "logger.fine(\"runJsFunc: \" + name + \" END\");" +
                         "return res;" +
                         "} catch (RuntimeException e) {" +
-                            "logger.info(\"RT-Error in runJsFunc: \" + name + \": \" + e.toString());" +
+                            "logger.fine(\"RT-Error in runJsFunc: \" + name + \": \" + e.toString());" +
                             "e.printStackTrace();" +
                         "} catch (Exception e) {" +
-                            "logger.info(\"Error in runJsFunc: \" + name + \": \" + e.toString());" +
+                            "logger.fine(\"Error in runJsFunc: \" + name + \": \" + e.toString());" +
                             "e.printStackTrace();" +
                         "}" +
-                        "logger.info(\"runJsFunc: \" + name + \" END null\");" +
+                        "logger.fine(\"runJsFunc: \" + name + \" END null\");" +
                         "return null;" +
                     "}",
                     clz
@@ -78,7 +79,7 @@ public class ClassGenerator {
             CtMethod createJsInstance = CtNewMethod.make(
                     "private void createJsInstance(String classname, Object[] args) { " +
                         "java.util.logging.Logger logger = java.util.logging.Logger.getLogger(\"createJsInstance\");" +
-                        "logger.info(\"createJsInstance: \" + classname + \" BEGIN\");" +
+                        "logger.fine(\"createJsInstance: \" + classname + \" BEGIN\");" +
                         "try {" +
                         "com.eclipsesource.v8.V8 v8 = io.js.J2V8Classes.V8JavaClasses.getRuntime(runtimeName);" +
                         "com.eclipsesource.v8.V8Locker lockr = v8.getLocker();"+
@@ -90,11 +91,11 @@ public class ClassGenerator {
                         "v8Args.release();" +
                         "lockr.release();"+
                         "} catch (RuntimeException e) {" +
-                            "logger.info(\"RT-Error in createJsInstance: \" + classname + \": \" + e.getMessage());" +
+                            "logger.fine(\"RT-Error in createJsInstance: \" + classname + \": \" + e.getMessage());" +
                         "} catch (Exception e) {" +
-                            "logger.info(\"Error in createJsInstance: \" + classname + \": \" + e.getMessage());" +
+                            "logger.fine(\"Error in createJsInstance: \" + classname + \": \" + e.getMessage());" +
                         "}" +
-                        "logger.info(\"createJsInstance: \" + classname + \" END\");" +
+                        "logger.fine(\"createJsInstance: \" + classname + \" END\");" +
                     "}",
                     clz
             );
@@ -104,7 +105,7 @@ public class ClassGenerator {
             CtConstructor[] c = superClz.getConstructors();
 
             if (c.length != 0) {
-                logger.info("Constructors found " + c.length);
+                logger.fine("Constructors found " + c.length);
 
                 for (int i = 0; i < c.length; i++) {
 
@@ -112,8 +113,30 @@ public class ClassGenerator {
                         c[i].getParameterTypes(),
                         c[i].getExceptionTypes(),
                         "{" +
+                            (canonicalName.equals("io.js.enderScript.Dynamic.TestJsClassConstructors.JsExtenderClass") ? "super(4, -1);" : "super();") +
+                            // "super(" +
+
+                            // ");" +
+                            //"super(\"blah\");" +
+
+                            "com.eclipsesource.v8.V8 v8 = io.js.J2V8Classes.V8JavaClasses.getRuntime(runtimeName);" +
+                            "com.eclipsesource.v8.V8Locker lockr = v8.getLocker();"+
+                            //"lockr.acquire();"+
+                            // TODO: parameter coercion just like when running methods (extract common code)
+
+                            // "com.eclipsesource.v8.V8Array v8Args = new com.eclipsesource.v8.V8Array(v8);" +
+                            // "com.eclipsesource.v8.V8Object inst = io.js.J2V8Classes.Utils.toV8Object(v8, \"blah\");" +
+                            // "v8Args.push(inst);" +
+
+                            // "super(\"blah\");" +
+                            "java.util.logging.Logger logger = java.util.logging.Logger.getLogger(\"proxyConstructor\");" +
+                            "logger.fine(\"Constructing: " + clz.getName()+ "\");" +
+
                             "Object[] args = null;" +
                             "this.createJsInstance(\"" + clz.getName() + "\", args);" +
+                            //"v8Args.release();" +
+                            //"lockr.release();"+
+                            "logger.fine(\"Construction finished: " + clz.getName()+ "\");" +
                         "}",
                         clz
                     );
@@ -121,14 +144,21 @@ public class ClassGenerator {
                 }
             } 
             else {
-                logger.info("No constructors for " + clz.getSimpleName() + ", using default ctor");
+                logger.fine("No constructors for " + clz.getSimpleName() + ", using default ctor");
 
                 CtConstructor proxyConstructor = CtNewConstructor.make(
                     "public " + clz.getSimpleName() + "()" +
                     "{" +
                         //"super();" +
+                        "java.util.logging.Logger logger = java.util.logging.Logger.getLogger(\"proxyConstructor\");" +
+                        "logger.fine(\"Constructing-2: " + clz.getName()+ "\");" +
+                        "com.eclipsesource.v8.V8 v8 = io.js.J2V8Classes.V8JavaClasses.getRuntime(runtimeName);" +
+                        "com.eclipsesource.v8.V8Locker lockr = v8.getLocker();"+
+                        "lockr.acquire();"+
                         "Object[] args = null;" +
                         "this.createJsInstance(\"" + clz.getName() + "\", args);" +
+                        "lockr.release();"+
+                        "logger.fine(\"Construction-2 finished: " + clz.getName()+ "\");" +
                     "}",
                     clz
                 );
@@ -142,16 +172,16 @@ public class ClassGenerator {
             for (int i = 0, j = methods.length(); i < j; i++) {
                 V8Object v8o = methods.getObject(i);
                 String name = v8o.getString("name");
-                logger.info("> Adding method: " + name);
+                logger.fine("> Adding method: " + name);
                 methodNames += "\"" + name + "\"";
 
                 V8Object annotations = v8o.getObject("annotations");
                 if (annotations.contains("Override") && annotations.getBoolean("Override")) {
-                    logger.info(">> is override");
+                    logger.fine(">> is override");
                     CtMethod superMethod = findSuperMethod(superClz, name);
 
-//                    logger.info(">> >> " + Arrays.toString(superMethod.getParameterTypes()));
-//                    logger.info(">> >> " + superMethod.getReturnType().getName());
+                    logger.fine(">> >> " + Utils.printArray(superMethod.getParameterTypes()));
+                    //logger.fine(">> >> " + superMethod.getReturnType().getName());
 
                     String superReturnType = superMethod.getReturnType().getName();
                     CtClass[] superArgs = superMethod.getParameterTypes();
@@ -168,9 +198,9 @@ public class ClassGenerator {
 
                     CtClass genType = superMethod.getReturnType().getComponentType();
 
-                    logger.info(">> RETURN " + superReturnType);
-                    logger.info(">> ARGS " + argsString);
-                    logger.info(">> JSARGS " + jsFuncArgString);
+                    logger.fine(">> RETURN " + superReturnType);
+                    logger.fine(">> ARGS " + argsString);
+                    logger.fine(">> JSARGS " + jsFuncArgString);
 
                     String meth = "public " + superReturnType + " " + name + "(" + argsString + ") { ";
                     if (jsFuncArgString.length() > 0) {
@@ -196,7 +226,7 @@ public class ClassGenerator {
                     // Boolean var3 = (Boolean)this.runJsFunc("shouldExecuteOnProject", var2);
                     // return var3.booleanValue();
 
-                    logger.info(">> Full-Signature: " + meth);
+                    logger.fine(">> Full-Signature: " + meth);
 
                     CtMethod proxyMethod = CtNewMethod.make(
                             meth,
@@ -204,12 +234,12 @@ public class ClassGenerator {
                     );
 
                     if (!superClz.isInterface()) {
-                        logger.info("Inherit Super-Method modifiers (not abstract)");
+                        logger.fine("Inherit Super-Method modifiers (not abstract)");
                         proxyMethod.setModifiers(superMethod.getModifiers() & ~Modifier.ABSTRACT);
                     }
 
-                    logger.info("Super-Method modifiers: " + superMethod.getModifiers());
-                    logger.info("Proxy-Method modifiers: " + proxyMethod.getModifiers());
+                    logger.fine("Super-Method modifiers: " + superMethod.getModifiers());
+                    logger.fine("Proxy-Method modifiers: " + proxyMethod.getModifiers());
 
                     clz.addMethod(proxyMethod);
                 } else {
@@ -235,27 +265,27 @@ public class ClassGenerator {
             // TODO: get modifiers by annotations from JS ???
             clz.setModifiers(Modifier.PUBLIC);
 
-            logger.info("Class-Modifiers: " + clz.getModifiers());
-            logger.info("Full-Class: " + clz.toString());
+            logger.fine("Class-Modifiers: " + clz.getModifiers());
+            logger.fine("Full-Class: " + clz.toString());
 
             try {
                 DataOutputStream out = new DataOutputStream(new FileOutputStream(canonicalName + ".class"));
                 clz.getClassFile().write(out);
             } catch (Exception e)
             {
-                logger.info("Class-Source Error: " + e);
+                logger.fine("Class-Source Error: " + e);
                 e.printStackTrace();
             }
 
             Class result = clz.toClass();
 
-            logger.info("Before-Assert Class");
+            logger.fine("Before-Assert Class");
 
             try {
                 Class assrt = Class.forName(canonicalName);
-                logger.info("After-Assert Class: " + assrt);
+                logger.fine("After-Assert Class: " + assrt);
             } catch (Exception e) {
-                logger.info("Class-Assert Error: " + e);
+                logger.fine("Class-Assert Error: " + e);
                 e.printStackTrace();
             }
 
@@ -271,7 +301,7 @@ public class ClassGenerator {
     }
 
     private static CtMethod findSuperMethod(CtClass clz, String name) {
-        logger.info("Finding method: " + name + " on " + clz.getName());
+        logger.fine("Finding method: " + name + " on " + clz.getName());
         if (clz == null) {
             return null;
         }

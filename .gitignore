@@ -3,3 +3,5 @@ bin
 *.log
 build
 .gradle/
+target
+*.class

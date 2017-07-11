@@ -8,7 +8,7 @@ import org.junit.Test;
  * Created by Brown on 4/27/16.
  */
 public class TestStatics {
-    @Test
+    //@Test
     public void testJavaStatics() {
         V8 v8 = V8JavaClasses.injectClassHelper(V8.createV8Runtime(), "testJavaStatics");
         v8.executeVoidScript(Utils.getScriptSource(this.getClass().getClassLoader(), "testStatics.js"));

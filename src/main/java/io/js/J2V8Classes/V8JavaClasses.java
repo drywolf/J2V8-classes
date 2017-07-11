@@ -34,10 +34,11 @@ public class V8JavaClasses {
         return runtimes.get(name);
     }
 
+    @Deprecated
     public static void initMainClassPaths()
     {
         String classpath = System.getProperty("java.class.path");
-        logger.info("Initializing from main class-path: " + classpath);
+        logger.fine("Initializing from main class-path: " + classpath);
 
         String[] classpathEntries = classpath.split(File.pathSeparator);
 
@@ -47,14 +48,35 @@ public class V8JavaClasses {
         {
             //Class c = Class.forName(superName);
             try {
-                logger.info("Adding main class-path: " + cpEntry);
+                logger.fine("Adding main class-path: " + cpEntry);
                 cp.insertClassPath(cpEntry);
-                logger.info("Added main class-path: " + cpEntry);
+                logger.fine("Added main class-path: " + cpEntry);
             }
             catch (NotFoundException e) {
-                logger.info("Main class-path error: " + e);
+                logger.warning("Main class-path error: " + e);
             }
         }
+    }
+
+    public static void addtoClassPath(Class c)
+    {
+        logger.fine("addtoClassPath: " + c);
+
+        ClassPool cp = ClassPool.getDefault();
+        cp.insertClassPath(new ClassClassPath(c));
+    }
+
+    public static String classAliasFor(String originalClass)
+    {
+        String alias = ClassAliases.get(originalClass);
+
+        if (alias != null)
+        {
+            logger.fine("Using class alias: " + alias);
+            return alias;
+        }
+
+        return originalClass;
     }
 
     public static HashMap<String, String> ClassAliases = new HashMap<String, String>();
@@ -115,7 +137,7 @@ public class V8JavaClasses {
                         ((V8Value) obj).release();
                     }
                 }
-                logger.info("JS: " + sb.toString());
+                logger.fine("JS: " + sb.toString());
             }
         };
         runtime.registerJavaMethod(log, "log");
@@ -124,24 +146,25 @@ public class V8JavaClasses {
         JavaVoidCallback getClass = new JavaVoidCallback() {
             public void invoke(final V8Object receiver, final V8Array parameters) {
                 String className = parameters.getString(0);
-                logger.info("Getting class: " + className);
+                logger.fine("Getting class: " + className);
                 try {
                     getClassInfo(runtime, className, parameters.getObject(1));
                 } catch (ClassNotFoundException e) {
                     logger.warning("> getClass > Class not found");
+                    e.printStackTrace();
                 } catch (IllegalAccessException e) {
+                    logger.warning("> getClass > illegal access");
                     e.printStackTrace();
                 }
             }
         };
         runtime.registerJavaMethod(getClass, "JavaGetClass");
 
-
         JavaCallback createInstance = new JavaCallback() {
             public V8Object invoke(final V8Object receiver, final V8Array parameters) {
-                logger.info("BEGIN JavaCreateInstance");
+                logger.fine("BEGIN JavaCreateInstance");
                 String className = parameters.getString(0);
-                logger.info("BEFORE JavaCreateInstance");
+                logger.fine("BEFORE JavaCreateInstance");
                 try {
                     return createInstance(runtime, className, Utils.v8arrayToObjectArray(parameters, 1));
                 } catch (ClassNotFoundException e) {
@@ -167,17 +190,16 @@ public class V8JavaClasses {
                 String className = parameters.getString(0);
                 String superName = parameters.getString(1);
                 V8Array methods = parameters.getArray(2);
-                logger.info("Generating class: " + className + " extending " + superName + " (method count " + methods.length() + ")");
+                logger.fine("Generating class: " + className + " extending " + superName + " (method count " + methods.length() + ")");
 
-                ClassPool cp = null;
                 // CtClass superClz = null;
                 
                 try {
-                    cp = ClassPool.getDefault();
+                    ClassPool cp = ClassPool.getDefault();
 
                     Class c = Class.forName(superName);
                     cp.insertClassPath(new ClassClassPath(c));
-                    logger.info("Inserted CP for " + superName);
+                    logger.fine("Inserted CP for " + superName);
 
                     // NOTE: disabled until clear if needed
                     //superClz = cp.getCtClass(superName);
@@ -194,7 +216,7 @@ public class V8JavaClasses {
                     //superClz = cp.get(superName);
                 }
                 catch (Exception e) {
-                    logger.info("generateClass Ex " + e);
+                    logger.warning("Unable to automatically update Class-Path: " + e);
                 }
 
                 // NOTE: disabled until clear if needed
@@ -219,20 +241,14 @@ public class V8JavaClasses {
     }
 
     private static void getClassInfo(V8 runtime, String className, V8Object classInfo) throws ClassNotFoundException, IllegalAccessException {
-        logger.info("Getting class info: " + className);
+        logger.fine("Getting class info: " + className);
 
-        String alias = ClassAliases.get(className);
-
-        if (alias != null)
-        {
-            logger.info("Using class alias: " + alias);
-            className = alias;
-        }
+        className = classAliasFor(className);
 
         Class initclz = null;
 
         try {
-        logger.info("Getting Java class: " + className);
+        logger.fine("Getting Java class: " + className);
 
         // try {
             initclz = Class.forName(className);
@@ -243,18 +259,18 @@ public class V8JavaClasses {
 
         if (initclz == null)
         {
-            logger.info("Class not found in default class-loader");
+            logger.fine("Class not found in default class-loader");
 
             // TODO: find the ClassLoader that contains the class
             // for (ClassLoader cl : cls)
             // {
-            //     logger.info("Looking into class-loader: " + cl.toString());
+            //     logger.fine("Looking into class-loader: " + cl.toString());
 
             //     initclz = Class.forName(className, true, cl);
 
             //     if (initclz != null)
             //     {
-            //         logger.info("Class found at alternative class-loader");
+            //         logger.fine("Class found at alternative class-loader");
             //         break;
             //     }
             // }
@@ -262,7 +278,7 @@ public class V8JavaClasses {
 
         Class clz = initclz;
 
-        logger.info("After getting Java class: " + className);
+        logger.fine("After getting Java class: " + className);
 
         generateAllGetSet(classInfo.getObject("statics"), clz, clz, true);
         generateAllGetSet(classInfo.getObject("publics"), clz, clz, false);
@@ -272,12 +288,25 @@ public class V8JavaClasses {
 
         Class superClz = clz.getSuperclass();
         if (superClz != Object.class && superClz != null) {
-            classInfo.add("__javaSuperclass", Utils.getClassName(clz.getSuperclass()));
+            String superClzName = Utils.getClassName(superClz);
+            logger.fine("__javaSuperclass[c] = " + superClzName);
+            classInfo.add("__javaSuperclass", superClzName);
         }
+        // else {
+        //     Class[] interfaces = clz.getInterfaces();
+
+        //     // TODO: support multiple interface inheritance in JS
+        //     if (interfaces != null && interfaces.length > 0) {
+        //         Class superInterface = interfaces[0];
+        //         String superInterfaceName = Utils.getClassName(superInterface);
+        //         logger.fine("__javaSuperclass[i] = " + superInterfaceName);
+        //         logger.fine("__javaSuperclass = " + superInterfaceName);
+        //     }
+        // }
 
         if (className.equals("java.lang.Class"))
         {
-            logger.info("Skipping __class for java.lang.Class");
+            logger.fine("Skipping __class for java.lang.Class");
             return;
         }
 
@@ -287,11 +316,11 @@ public class V8JavaClasses {
         JavaCallback getter = new JavaCallback() {
             public V8Object invoke(final V8Object receiver, final V8Array parameters) {
                 try {
-                    logger.info("get __class");
+                    logger.fine("get __class");
                     return Utils.toV8Object(runtime, clz);
                 } catch (V8ResultUndefined e) {
                     e.printStackTrace();
-                    logger.info("ERROR getting __class " + e);
+                    logger.fine("ERROR getting __class " + e);
                 }
                 return new V8Object(runtime);
             }
@@ -300,21 +329,21 @@ public class V8JavaClasses {
 
         JavaVoidCallback setter = new JavaVoidCallback() {
             public void invoke(final V8Object receiver, final V8Array parameters) {
-                logger.info("ERROR not allowed to set __class");
+                logger.fine("ERROR not allowed to set __class");
             }
         };
         jsF.registerJavaMethod(setter, "__set_" + "__class");
         }
         catch (ClassNotFoundException e) {
-            logger.info("Empty classInfo for: " + className + " because class was not found");
+            logger.warning("Empty classInfo for: " + className + " because class was not found");
         }
         catch (RuntimeException e) {
-            logger.info("Invalid JS proxy class because RT: " + e.toString());
+            logger.warning("Invalid JS proxy class because RT: " + e.toString());
             e.printStackTrace();
             throw e;
         }
         catch (Exception e) {
-            logger.info("Invalid JS proxy class because: " + e.toString());
+            logger.warning("Invalid JS proxy class because: " + e.toString());
             e.printStackTrace();
             throw e;
         }
@@ -324,7 +353,7 @@ public class V8JavaClasses {
     }
 
     private static V8Object createInstance(V8 runtime, String className, Object[] parameters) throws ClassNotFoundException, IllegalAccessException, InstantiationException, InvocationTargetException, NoSuchMethodException {
-        logger.info("Getting class instance: " + className);
+        logger.fine("Getting class instance: " + className);
         Class clz = Class.forName(className);
 
         // TODO: support for nested classes? http://stackoverflow.com/a/17485341
@@ -333,7 +362,7 @@ public class V8JavaClasses {
             paramTypes.add(o.getClass().toString());
         }
 
-        logger.info("> Getting constructor for args: " + String.join(", ", paramTypes));
+        logger.fine("> Getting constructor for args: " + String.join(", ", paramTypes));
         Executable inferredMethod = Utils.findMatchingExecutable(
                 clz.getConstructors(),
                 parameters,
@@ -341,7 +370,7 @@ public class V8JavaClasses {
         );
 
         if (inferredMethod == null) {
-            logger.warning("> Could not find constructor for args " + Arrays.toString(parameters));
+            logger.warning("> Could not find constructor for args " + Utils.printArray(parameters));
             return null;
         }
 
@@ -352,9 +381,9 @@ public class V8JavaClasses {
     private static void generateAllGetSet(V8Object parent, Class clz, Object instance, boolean statics) {
         V8 runtime = parent.getRuntime();
 
-        logger.info("Generating getters and setters for: " + clz.getName() + "(" + System.identityHashCode(instance) + ", " + statics + ")");
+        logger.fine("Generating getters and setters for: " + clz.getName() + "(" + System.identityHashCode(instance) + ", " + statics + ")");
 
-        logger.info("> Getting fields");
+        logger.fine("> Getting fields");
         Field[] f = clz.getDeclaredFields();
         V8Object jsF = parent.getObject("fields");
         for (int i = 0; i < f.length; i++) {
@@ -363,7 +392,7 @@ public class V8JavaClasses {
             }
         }
 
-        logger.info("> Getting methods");
+        logger.fine("> Getting methods");
         // Dont send in js methods??
         String[] jsMethods;
         try {
@@ -374,7 +403,7 @@ public class V8JavaClasses {
         } catch(IllegalAccessException e) {
             jsMethods = new String[]{};
         }
-        logger.info(">> jsMethods= " + Arrays.toString(jsMethods));
+        logger.fine(">> jsMethods= " + String.join(",", jsMethods));
 
         Method[] methods = clz.getDeclaredMethods();
         V8Object jsM = parent.getObject("methods");
@@ -385,10 +414,27 @@ public class V8JavaClasses {
             }
         }
 
+        Class[] interfaces = clz.getInterfaces();
+
+        if (interfaces != null) {
+            for (Class iface : interfaces) {
+                logger.fine(">> jsMethods[" + iface + "]= " + String.join(",", jsMethods));
+                
+                Method[] imethods = iface.getDeclaredMethods();
+
+                for (int i = 0; i < imethods.length; i++) {
+                    Method m = imethods[i];
+                    if (Modifier.isStatic(m.getModifiers()) == statics) {
+                        generateMethod(jsM, m);
+                    }
+                }
+            }
+        }
+
         if (!statics) {
             Class superClz = clz.getSuperclass();
             if (superClz != Object.class && superClz != null) {
-                logger.info("> Adding super object for: " + superClz.getName());
+                logger.fine("> Adding super object for: " + superClz.getName());
                 V8Object superData = runtime.executeObjectScript("ClassHelpers.getBlankClassInfo()");
                 superData.add("__javaClass", superClz.getCanonicalName());
                 generateAllGetSet(superData.getObject("publics"), superClz, instance, false);
@@ -401,33 +447,33 @@ public class V8JavaClasses {
         V8 runtime = parent.getRuntime();
 
         String mName = m.getName();
-        logger.info(">> M: " + mName);
+        logger.fine(">> M: " + mName);
 
         int mods = m.getModifiers();
         if (Modifier.isPrivate(mods)) {
-            logger.info(">>> Skipping private");
+            logger.fine(">>> Skipping private");
             return;
         }
         if (Modifier.isProtected(mods)) {
-            logger.info(">>> Skipping protected");
+            logger.fine(">>> Skipping protected");
             return;
         }
 
         JavaCallback staticMethod = new JavaCallback() {
             public V8Object invoke(final V8Object receiver, final V8Array parameters) {
                 try {
-                    Object fromRecv = getReceiverFromCallback(receiver);
+                    Object fromRecv = getReceiverFromCallback(receiver, "<method> " + mName);
                     if (fromRecv == null) {
-                        logger.warning("Callback with no bound java receiver!");
+                        logger.warning("Callback with no bound java receiver! (" + mName + ")");
                         return new V8Object(runtime);
                     }
                     Object[] args = Utils.v8arrayToObjectArray(parameters);
-                    logger.info("Method: " + mName);
-                    logger.info("Args: " + Arrays.toString(args));
+                    logger.fine("Method: " + mName);
+                    logger.fine("Args: " + Utils.printArray(args));
 
                     Class fromRecvClz = fromRecv instanceof Class ? (Class) fromRecv : fromRecv.getClass();
 
-                    logger.info("fromRecvClz: " + Utils.getClassName(fromRecvClz));
+                    logger.fine("fromRecvClz: " + Utils.getClassName(fromRecvClz));
 
                     Executable inferredMethod = Utils.findMatchingExecutable(
                             fromRecvClz.getMethods(),
@@ -441,7 +487,7 @@ public class V8JavaClasses {
 
                     inferredMethod.setAccessible(true);
                     Object v = ((Method) inferredMethod).invoke(fromRecv, Utils.matchExecutableParams(inferredMethod, args));
-                    logger.info("Method returned: " + v);
+                    logger.fine("Method returned: " + v);
                     return Utils.toV8Object(runtime, v);
                 } catch (IllegalAccessException e) {
                     e.printStackTrace();
@@ -456,10 +502,10 @@ public class V8JavaClasses {
         parent.registerJavaMethod(staticMethod, mName);
     }
 
-    public static Object getReceiverFromCallback(V8Object receiver) throws ClassNotFoundException {
+    public static Object getReceiverFromCallback(V8Object receiver, String target) throws ClassNotFoundException {
         if (!receiver.contains("__javaInstance")) {
             if (!receiver.contains("__javaClass")) {
-                logger.warning("Callback with no bound java receiver!");
+                logger.warning("Java receiver is missing class & instance meta-data! (target: " + target + ")");
                 return null;
             }
             return Class.forName(receiver.getString("__javaClass"));
@@ -468,9 +514,9 @@ public class V8JavaClasses {
     }
 
     private static V8Object getFromField(V8 runtime, V8Object receiver, Field f) throws IllegalAccessException, ClassNotFoundException {
-        Object fromRecv = getReceiverFromCallback(receiver);
+        Object fromRecv = getReceiverFromCallback(receiver, "<field> " + f.getName());
         if (fromRecv == null) {
-            logger.warning("Could not find receiving Object for callback!");
+            logger.warning("Could not find receiving Object for callback! " + f);
             return new V8Object(runtime);
         }
         f.setAccessible(true);
@@ -482,15 +528,15 @@ public class V8JavaClasses {
         V8 runtime = parent.getRuntime();
 
         String fName = f.getName();
-        logger.info(">> F: " + fName);
+        logger.fine(">> F: " + fName);
 
         int mods = f.getModifiers();
         if (Modifier.isPrivate(mods)) {
-            logger.info(">>> Skipping private");
+            logger.fine(">>> Skipping private");
             return;
         }
         if (Modifier.isProtected(mods)) {
-            logger.info(">>> Skipping protected");
+            logger.fine(">>> Skipping protected");
             return;
         }
 
@@ -513,17 +559,17 @@ public class V8JavaClasses {
         JavaVoidCallback setter = new JavaVoidCallback() {
             public void invoke(final V8Object receiver, final V8Array parameters) {
                 try {
-                    Object fromRecv = getReceiverFromCallback(receiver);
+                    Object fromRecv = getReceiverFromCallback(receiver, "<setter> " + fName);
 
                     if (fromRecv == null) {
-                        logger.warning("Could not find receiving Object for callback!");
+                        logger.warning("Could not find receiving Object for callback! (" + fName + ")");
                         return;
                     }
 
                     Object v = parameters.get(0);
                     if (v.getClass() == V8Object.class) {
                         V8Object jsObj = (V8Object) v;
-                        Object javaObj = getReceiverFromCallback(jsObj);
+                        Object javaObj = getReceiverFromCallback(jsObj, "<set-value> " + fName + " = " + v);
                         if(javaObj == null){
                             return;
                         }
@@ -544,7 +590,8 @@ public class V8JavaClasses {
     public static void release(String runtimeName) {
         Utils.releaseAllFor(runtimes.get(runtimeName));
         // TODO: better release logic... maybe add some cleanup stuff to jsClassHelper
-        runtimes.get(runtimeName).release(false);
+        V8 v8 = runtimes.get(runtimeName);
+        v8.release(false);
         runtimes.remove(runtimeName);
     }
 }

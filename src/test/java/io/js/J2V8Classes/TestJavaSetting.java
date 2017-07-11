@@ -15,9 +15,11 @@ public class TestJavaSetting {
     public static RunnableWithArg customRunnable = null;
     public static V8Object v8obj = null;
 
-    @Test
+    //@Test
     public void testJavaInstance() {
         V8 v8 = V8JavaClasses.injectClassHelper(V8.createV8Runtime(), "testJavaSetting");
+        v8.getLocker().acquire();
+
         v8.executeVoidScript(Utils.getScriptSource(this.getClass().getClassLoader(), "testJsSetJava.js"));
 
         Assert.assertEquals("yes", customString);

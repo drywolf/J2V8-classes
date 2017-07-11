@@ -319,8 +319,13 @@ Class = abitbol.Class;
       var instData;
       var isSuper = arguments[0] === _IS_SUPER;
       if (isSuper || arguments[0] === _FROM_JAVA) {
-        log('adopting java instance: ', className);
+        log('adopting java instance: ', className, (isSuper ? ' (for super)' : ''));
         instData = arguments[1];
+
+        if (!instData) {
+          log('WARNING: instData not valid... adopting java instance must have failed');
+          throw new Error('adopt java instance failed');
+        }
       } else {
         log('creating new instance: ', instChildClass, ' (non dynamic super ', className, ')');
         var args = Array.prototype.slice.call(arguments);
@@ -375,6 +380,7 @@ Class = abitbol.Class;
     if (!isDynamicClass(className)) {
       log("Applying default ctor for " + className);
       classConstructor.__init__ = function() {
+        log("Calling " + className + ".__init__ #1 > ", JSON.stringify(arguments));
         internalClassInit.apply(this, arguments);
       };
     }
@@ -455,6 +461,15 @@ Class = abitbol.Class;
     if (!classConstructor.__init__) {
       log('No user defined init, using internalClassInit');
       classConstructor.__init__ = internalClassInit;
+    }
+    else {
+      log('User defined init found, what should we do?');
+      // var userInit = classConstructor.__init__;
+      // classConstructor.__init__ = function() {
+      //   log("Calling " + className + ".__init__ #2 > ", JSON.stringify(arguments));
+      //   internalClassInit.apply(this, arguments);
+      //   userInit.apply(this, arguments);
+      // };
     }
     /*else {
       log('User defined init found, calling super');
@@ -600,7 +615,7 @@ Class = abitbol.Class;
         log("Was unable to create JS instance for Java object");
     }
     catch (e) {
-      log("Error in JS-Ctor: " + e);
+      log("Error in JS-Ctor: " + e + "(type " + e.stack + ")");
     }
   };
 

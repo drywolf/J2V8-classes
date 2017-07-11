@@ -8,7 +8,7 @@ import org.junit.Test;
  * Created by Brown on 4/27/16.
  */
 public class TestJavaInheritance {
-    @Test
+    //@Test
     public void testJavaInheritance() {
         V8 v8 = V8JavaClasses.injectClassHelper(V8.createV8Runtime(), "testJavaInheritance");
         v8.executeVoidScript(Utils.getScriptSource(this.getClass().getClassLoader(), "testJavaInheritance.js"));
